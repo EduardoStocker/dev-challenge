@@ -1,77 +1,91 @@
 ﻿using System;
-using System.Linq;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Mvc;
+using Desafio.Umbler.Exceptions;
 using Desafio.Umbler.Models;
-using Whois.NET;
-using Microsoft.EntityFrameworkCore;
+using Desafio.Umbler.Models.DTOs;
+using Desafio.Umbler.Repositories;
+using Desafio.Umbler.Service;
+using Desafio.Umbler.Service.Interfaces;
+using Desafio.Umbler.Services;
+using Desafio.Umbler.Services.Interfaces;
 using DnsClient;
+using Microsoft.AspNetCore.Mvc;
 
-namespace Desafio.Umbler.Controllers
+[ApiController]
+[Route("api/[controller]")]
+public class DomainController : ControllerBase
 {
-    [Route("api")]
-    public class DomainController : Controller
-    {
-        private readonly DatabaseContext _db;
+    private readonly IDomainService _domainService;
 
-        public DomainController(DatabaseContext db)
+    public DomainController(IDomainService domainService)
+    {
+        _domainService = domainService;
+    }
+
+    public DomainController(DatabaseContext db)
+    {
+        var repository = new DomainRepository(db);
+        IWhoisClient whoisClient = new WhoisClientWrapper();
+        ILookupClient lookupClient = new LookupClient();
+        _domainService = new DomainService(
+            repository,
+            whoisClient,
+            lookupClient
+        );
+    }
+
+    public DomainController(DatabaseContext db, IWhoisClient whoisClient, ILookupClient lookupClient)
+    {
+        var repository = new DomainRepository(db);
+        _domainService = new DomainService(
+            repository,
+            whoisClient,
+            lookupClient
+        );
+    }
+
+    [HttpGet("{domainName}")]
+    public async Task<IActionResult> Get(string domainName)
+    {
+        if (string.IsNullOrWhiteSpace(domainName))
         {
-            _db = db;
+            return BadRequest(new ErrorResponse
+            {
+                Message = "O domínio não pode ser vazio.",
+                ErrorCode = "DOMAIN_EMPTY"
+            });
         }
 
-        [HttpGet, Route("domain/{domainName}")]
-        public async Task<IActionResult> Get(string domainName)
+        try
         {
-            var domain = await _db.Domains.FirstOrDefaultAsync(d => d.Name == domainName);
-
-            if (domain == null)
+            var result = await _domainService.GetDomainInfoAsync(domainName);
+            return Ok(result);
+        }
+        catch (DomainValidationException ex)
+        {
+            return BadRequest(new ErrorResponse
             {
-                var response = await WhoisClient.QueryAsync(domainName);
-
-                var lookup = new LookupClient();
-                var result = await lookup.QueryAsync(domainName, QueryType.ANY);
-                var record = result.Answers.ARecords().FirstOrDefault();
-                var address = record?.Address;
-                var ip = address?.ToString();
-
-                var hostResponse = await WhoisClient.QueryAsync(ip);
-
-                domain = new Domain
-                {
-                    Name = domainName,
-                    Ip = ip,
-                    UpdatedAt = DateTime.Now,
-                    WhoIs = response.Raw,
-                    Ttl = record?.TimeToLive ?? 0,
-                    HostedAt = hostResponse.OrganizationName
-                };
-
-                _db.Domains.Add(domain);
-            }
-
-            if (DateTime.Now.Subtract(domain.UpdatedAt).TotalMinutes > domain.Ttl)
+                Message = ex.Message,
+                ErrorCode = "DOMAIN_INVALID"
+            });
+        }
+        catch (ExternalServiceException ex)
+        {
+            return StatusCode(503, new ErrorResponse
             {
-                var response = await WhoisClient.QueryAsync(domainName);
-
-                var lookup = new LookupClient();
-                var result = await lookup.QueryAsync(domainName, QueryType.ANY);
-                var record = result.Answers.ARecords().FirstOrDefault();
-                var address = record?.Address;
-                var ip = address?.ToString();
-
-                var hostResponse = await WhoisClient.QueryAsync(ip);
-
-                domain.Name = domainName;
-                domain.Ip = ip;
-                domain.UpdatedAt = DateTime.Now;
-                domain.WhoIs = response.Raw;
-                domain.Ttl = record?.TimeToLive ?? 0;
-                domain.HostedAt = hostResponse.OrganizationName;
-            }
-
-            await _db.SaveChangesAsync();
-
-            return Ok(domain);
+                Message = "Serviço temporariamente indisponível. Tente novamente mais tarde.",
+                ErrorCode = "SERVICE_UNAVAILABLE",
+                Details = ex.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new ErrorResponse
+            {
+                Message = "Erro interno ao processar a requisição.",
+                ErrorCode = "INTERNAL_ERROR",
+                Details = ex.Message
+            });
         }
     }
 }
