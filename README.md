@@ -93,4 +93,12 @@ Se você rodar o projeto e testar um domínio, verá que ele já está funcionan
 
 # Modificações:
 
-- DESCREVA AQUI O OBJETIVO DAS MODIFICAÇÕES...
+Criado a classe DomainDTO.
+Alterado o retorno de Domain para uma DomainDTO.
+Alterado o front de vanilla para Blazor.
+Criado extensions para o moq do teste obrigatório.
+Adicionados diversos testes.
+Desacoplameno da DomainController, separando ela em camadas Repository,Controller e Service.
+Criada validações no back e no front end.
+Criado classe de exceptions.
+Criado uma DTO para erros.
