@@ -1,6 +1,13 @@
 ﻿using System;
+using System.Net.Http;
 using Desafio.Umbler.Models;
+using Desafio.Umbler.Repositories;
+using Desafio.Umbler.Repositories.Interfaces;
+using Desafio.Umbler.Services;
+using Desafio.Umbler.Services.Interfaces;
+using DnsClient;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -41,8 +48,24 @@ namespace Desafio.Umbler
                         .EnableDetailedErrors()
                 );
 
+            services.AddSingleton<ILookupClient>(new LookupClient());
+            services.AddScoped<IDomainRepository, DomainRepository>();
+            services.AddScoped<IDomainService, DomainService>();
 
             services.AddControllersWithViews();
+
+            // Blazor Server support
+            services.AddServerSideBlazor();
+
+            // Register HttpClient for use by Blazor components (server-side components will call the API on the same host)
+            services.AddScoped(sp =>
+            {
+                var navigationManager = sp.GetRequiredService<NavigationManager>();
+                return new HttpClient
+                {
+                    BaseAddress = new Uri(navigationManager.BaseUri)
+                };
+            });
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
@@ -62,6 +85,9 @@ namespace Desafio.Umbler
 
             app.UseEndpoints(endpoints =>
             {
+                // Blazor hub for server-side components
+                endpoints.MapBlazorHub();
+
                 endpoints.MapControllerRoute(
                     name: "default",
                     pattern: "{controller=Home}/{action=Index}/{id?}");

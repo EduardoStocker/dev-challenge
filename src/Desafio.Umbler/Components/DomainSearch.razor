@@ -1,0 +1,272 @@
+﻿@using Desafio.Umbler.Models.DTOs
+@using System.Text.RegularExpressions
+@using System.Net.Http.Json
+@inject HttpClient Http
+
+<div class="search-container">
+    <div class="hero">
+        <h1>Consulta WHOIS de Domínio</h1>
+        <p>
+            Descubra informações de registro, IP, hospedagem e dados WHOIS
+            de qualquer domínio em segundos.
+        </p>
+        <div class="search-row">
+            <input class="search-input @(validationError != null ? "input-error" : "")"
+                   value="@domain"
+                   @oninput="OnInputChange"
+                   @onkeypress="HandleKeyPress"
+                   placeholder="Digite o domínio (ex: google.com)" />
+            <button class="search-button"
+                    @onclick="Search"
+                    disabled="@(!IsValidDomain() || isLoading)">
+                @if (isLoading)
+                {
+                    <span>Pesquisando...</span>
+                }
+                else
+                {
+                    <span>Pesquisar</span>
+                }
+            </button>
+        </div>
+
+        @if (validationError != null)
+        {
+            <div class="validation-alert">@validationError</div>
+        }
+
+        @if (errorMessage != null)
+        {
+            <div class="error-alert">
+                @errorMessage
+                <button class="close-btn" @onclick="ClearError">&times;</button>
+            </div>
+        }
+        else if (result != null)
+        {
+            <div class="result-card">
+                <h5 class="result-title">@result.Name</h5>
+                <div class="info-row">
+                    <span class="info-label">IP:</span>
+                    <span class="info-value">@result.Ip</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Hosted At:</span>
+                    <span class="info-value">@result.HostedAt</span>
+                </div>
+                <details class="whois-details">
+                    <summary class="whois-summary">Ver WhoIs completo</summary>
+                    <div class="whois-content">@result.WhoIs</div>
+                </details>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private string domain = string.Empty;
+    private bool isLoading = false;
+    private string? errorMessage;
+    private string? validationError;
+    private DomainDto? result;
+
+    private static readonly Regex DomainRegex = new Regex(
+        @"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase
+    );
+
+    private void HandleKeyPress(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !isLoading && IsValidDomain())
+        {
+            Search();
+        }
+    }
+
+    private void ClearError()
+    {
+        errorMessage = null;
+    }
+
+    private void OnInputChange(ChangeEventArgs e)
+    {
+        domain = e.Value?.ToString() ?? string.Empty;
+        ValidateDomain();
+
+        result = null;
+        errorMessage = null;
+    }
+
+    private string CleanDomain(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+            return string.Empty;
+
+        var cleaned = input.Trim();
+
+        if (cleaned.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+            cleaned = cleaned.Substring(7);
+        else if (cleaned.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            cleaned = cleaned.Substring(8);
+
+        if (cleaned.StartsWith("www.", StringComparison.OrdinalIgnoreCase))
+            cleaned = cleaned.Substring(4);
+
+        
+        var queryIndex = cleaned.IndexOf('?');
+        if (queryIndex >= 0)
+            cleaned = cleaned.Substring(0, queryIndex);
+        
+        var slashIndex = cleaned.IndexOf('/');
+        if (slashIndex >= 0)
+            cleaned = cleaned.Substring(0, slashIndex);
+
+        return cleaned.Trim().ToLower();
+    }
+
+    private void ValidateDomain()
+    {
+        validationError = null;
+
+        if (string.IsNullOrWhiteSpace(domain))
+        {
+            return;
+        }
+
+        var cleanedDomain = CleanDomain(domain);
+
+        if (string.IsNullOrWhiteSpace(cleanedDomain))
+        {
+            validationError = "Informe um domínio válido.";
+            return;
+        }
+
+        if (cleanedDomain.Length < 3)
+        {
+            validationError = "O domínio deve ter no mínimo 3 caracteres.";
+            return;
+        }
+
+        if (cleanedDomain.Length > 253)
+        {
+            validationError = "O domínio deve ter no máximo 253 caracteres.";
+            return;
+        }
+
+        if (cleanedDomain.Contains(' '))
+        {
+            validationError = "O domínio não pode conter espaços.";
+            return;
+        }
+
+        if (!DomainRegex.IsMatch(cleanedDomain))
+        {
+            if (!cleanedDomain.Contains('.'))
+            {
+                validationError = "O domínio deve conter uma extensão (ex: .com, .br, .org).";
+            }
+            else if (cleanedDomain.StartsWith('.') || cleanedDomain.EndsWith('.'))
+            {
+                validationError = "O domínio não pode começar ou terminar com ponto.";
+            }
+            else if (cleanedDomain.Contains(".."))
+            {
+                validationError = "O domínio não pode conter pontos consecutivos.";
+            }
+            else
+            {
+                validationError = "Formato de domínio inválido. Use apenas letras, números, hífens e pontos.";
+            }
+            return;
+        }
+
+        var parts = cleanedDomain.Split('.');
+        var extension = parts[^1];
+
+        if (extension.Length < 2)
+        {
+            validationError = "A extensão do domínio deve ter pelo menos 2 caracteres.";
+            return;
+        }
+
+        if (!extension.All(char.IsLetter))
+        {
+            validationError = "A extensão do domínio deve conter apenas letras.";
+            return;
+        }
+    }
+
+    private bool IsValidDomain()
+    {
+        if (string.IsNullOrWhiteSpace(domain))
+            return false;
+
+        ValidateDomain();
+        return validationError == null;
+    }
+
+    private async Task Search()
+    {
+        errorMessage = null;
+        result = null;
+        validationError = null;
+
+        if (string.IsNullOrWhiteSpace(domain))
+        {
+            validationError = "Informe um domínio válido.";
+            return;
+        }
+
+        ValidateDomain();
+        if (validationError != null)
+        {
+            return;
+        }
+
+        try
+        {
+            isLoading = true;
+            StateHasChanged();
+
+            var cleanedDomain = CleanDomain(domain);
+            var encodedDomain = Uri.EscapeDataString(cleanedDomain);
+
+            var response = await Http.GetAsync($"api/domain/{encodedDomain}");
+
+            if (response.IsSuccessStatusCode)
+            {
+                result = await response.Content.ReadFromJsonAsync<DomainDto>();
+            }
+            else
+            {
+                var errorResponse = await response.Content.ReadFromJsonAsync<ErrorResponse>();
+
+                if (errorResponse != null)
+                {
+                    errorMessage = errorResponse.Message;
+                }
+                else
+                {
+                    errorMessage = $"Erro ao processar a requisição (Status: {response.StatusCode})";
+                }
+            }
+        }
+        catch (HttpRequestException ex)
+        {
+            errorMessage = "Erro de conexão com o servidor. Verifique sua internet e tente novamente.";
+        }
+        catch (System.Text.Json.JsonException ex)
+        {
+            errorMessage = "Erro ao processar resposta do servidor.";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Erro inesperado. Tente novamente mais tarde.";
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+}
