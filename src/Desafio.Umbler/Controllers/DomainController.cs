@@ -10,6 +10,7 @@ using Desafio.Umbler.Services;
 using Desafio.Umbler.Services.Interfaces;
 using DnsClient;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 
 [ApiController]
 [Route("api/[controller]")]
@@ -17,11 +18,11 @@ public class DomainController : ControllerBase
 {
     private readonly IDomainService _domainService;
 
+    [ActivatorUtilitiesConstructor]
     public DomainController(IDomainService domainService)
     {
         _domainService = domainService;
     }
-
     public DomainController(DatabaseContext db)
     {
         var repository = new DomainRepository(db);

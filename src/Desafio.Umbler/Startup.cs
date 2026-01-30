@@ -3,6 +3,8 @@ using System.Net.Http;
 using Desafio.Umbler.Models;
 using Desafio.Umbler.Repositories;
 using Desafio.Umbler.Repositories.Interfaces;
+using Desafio.Umbler.Service;
+using Desafio.Umbler.Service.Interfaces;
 using Desafio.Umbler.Services;
 using Desafio.Umbler.Services.Interfaces;
 using DnsClient;
@@ -51,6 +53,7 @@ namespace Desafio.Umbler
             services.AddSingleton<ILookupClient>(new LookupClient());
             services.AddScoped<IDomainRepository, DomainRepository>();
             services.AddScoped<IDomainService, DomainService>();
+            services.AddSingleton<IWhoisClient, WhoisClientWrapper>();
 
             services.AddControllersWithViews();
 
